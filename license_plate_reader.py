@@ -59,6 +59,9 @@ MAX_CHARACTER_HEIGHT = 300
 MIN_ASPECT_RATIO = 0.2
 MAX_ASPECT_RATIO = 0.6
 
+# Normalized dimensions
+NORMALIZED_HEIGHT = 100
+NORMALIZED_WIDTH = 60
 
 # --------------------------------------------------
 # Load the original image
@@ -270,12 +273,16 @@ else:
     for index, character_binary in enumerate(character_binaries):
         original_height, original_width = character_binary.shape
 
-        scale = 100/original_height
+        height_scale = NORMALIZED_HEIGHT / original_height
+        width_scale = NORMALIZED_WIDTH / original_width
+
+        scale = min(height_scale, width_scale)
+        new_height = round(original_height * scale)
         new_width = round(original_width * scale)
 
         resized_character = cv2.resize(
             character_binary,
-            (new_width, 100)
+            (new_width, new_height)
         )
 
         resized_characters.append(resized_character)
@@ -290,31 +297,35 @@ else:
     normalized_characters = []
     for resized_character in resized_characters:
         canvas = np.full(
-            (100, 60),
+            (NORMALIZED_HEIGHT, NORMALIZED_WIDTH),
             255,
             dtype = np.uint8
         )
 
-        x_start = (60 - resized_character.shape[1]) // 2
+        x_start = (NORMALIZED_WIDTH - resized_character.shape[1]) // 2
         x_end = x_start + resized_character.shape[1]
 
-        canvas[:, x_start:x_end] = resized_character
+        y_start = (NORMALIZED_HEIGHT - resized_character.shape[0]) // 2
+        y_end = y_start + resized_character.shape[0]
+
+        canvas[y_start:y_end, x_start:x_end] = resized_character
         normalized_characters.append(canvas)
 
     for index, normalized in enumerate(normalized_characters):
         print(f"Character {index}: {normalized.shape}")
 
     preview = np.full(
-        (100, 60 * len(normalized_characters)),
+        (NORMALIZED_HEIGHT, NORMALIZED_WIDTH * len(normalized_characters)),
         255,
         dtype = np.uint8
     )
 
     for i, normalized_character in enumerate(normalized_characters):
-        x_start = 60 * i
-        x_end = x_start + 60
+        x_start = NORMALIZED_WIDTH * i
+        x_end = x_start + NORMALIZED_WIDTH
 
         preview[:, x_start:x_end] = normalized_character
+        
     # --------------------------------------------------
     # Draw accepted contours
     # --------------------------------------------------
