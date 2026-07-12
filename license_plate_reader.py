@@ -1,6 +1,40 @@
 import cv2
 import numpy as np
 
+def box_iou(box_a, box_b):
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+
+    a_right = ax + aw
+    a_bottom = ay + ah
+
+    b_right = bx + bw
+    b_bottom = by + bh
+
+    # Compute intersection 
+    intersection_left = max (ax, bx)
+    intersection_top = max (ay, by)
+    intersection_right = min(a_right, b_right)
+    intersection_bottom = min(a_bottom, b_bottom)
+    intersection_height = max(
+        0,
+        intersection_bottom - intersection_top
+    )
+    intersection_width = max(
+        0,
+        intersection_right - intersection_left
+    )
+
+    # Calculate union area
+    area_a = aw * ah
+    area_b = bw * bh
+    intersection_area = intersection_width * intersection_height
+    union_area = area_a + area_b - intersection_area
+
+    # Calculate Intersection over Union
+    iou = intersection_area / union_area
+
+    return iou
 
 # --------------------------------------------------
 # Configuration
@@ -118,7 +152,8 @@ else:
     # --------------------------------------------------
 
     character_contours = []
-
+    character_boxes = []
+    
     for contour in contours:
         contour_area = cv2.contourArea(contour)
 
@@ -144,7 +179,9 @@ else:
 
         # This contour passed every filter.
         character_contours.append(contour)
-
+        character_boxes.append(
+            (x, y, box_width, box_height)
+        )
         print(
             f"Accepted contour:"
             f" x={x},"
@@ -160,6 +197,124 @@ else:
         len(character_contours)
     )
 
+    character_boxes.sort(
+        key = lambda box: box[2] * box[3],
+        reverse = True
+    )
+
+    unique_boxes = []
+
+    for candidate in character_boxes:
+        is_duplicate = any(
+            box_iou(candidate, kept_box) > 0.8
+            for kept_box in unique_boxes
+        )
+
+        if not is_duplicate:
+            unique_boxes.append(candidate)
+
+    unique_boxes.sort(
+        key = lambda box: (box[1], box[0]),
+    )
+
+    print("Unique boxes:")
+    for box in unique_boxes:
+        print(box)
+
+    # Seperate boxes on to 2 top and bottom rows
+    plate_middle_y = plate_crop.shape[0] / 2
+
+    top_row = []
+    bottom_row = []
+
+    for box in unique_boxes:
+        x, y, box_width, box_height = box
+        center_y = y + box_height/2
+        if center_y < plate_middle_y:
+            top_row.append(box)
+        else:
+            bottom_row.append(box)
+
+    top_row.sort(key=lambda box: box[0])
+    bottom_row.sort(key=lambda box: box[0])
+
+    print("Top row:")
+    for box in top_row:
+        print(box)
+
+    print("Bottom row:")
+    for box in bottom_row:
+        print(box)
+
+    ordered_boxes = top_row + bottom_row
+    character_binaries = []
+    for index, box in enumerate(ordered_boxes):
+        x, y, box_width, box_height = box
+        character_image = plate_crop[
+            y: y + box_height,
+            x: x + box_width 
+        ]
+        character_gray = cv2.cvtColor(
+            character_image,
+            cv2.COLOR_BGR2GRAY
+        )
+        threshold_used, character_binary = cv2.threshold(
+            character_gray,
+            0,
+            255,
+            cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        character_binaries.append(character_binary)
+
+    resized_characters = []
+    for index, character_binary in enumerate(character_binaries):
+        original_height, original_width = character_binary.shape
+
+        scale = 100/original_height
+        new_width = round(original_width * scale)
+
+        resized_character = cv2.resize(
+            character_binary,
+            (new_width, 100)
+        )
+
+        resized_characters.append(resized_character)
+        print(
+            f"Character {index}: "
+            f"original={character_binary.shape}, "
+            f"resized={resized_character.shape}"
+        )
+
+    print("Stored characters:", len(resized_characters))
+
+    normalized_characters = []
+    for resized_character in resized_characters:
+        canvas = np.full(
+            (100, 60),
+            255,
+            dtype = np.uint8
+        )
+
+        x_start = (60 - resized_character.shape[1]) // 2
+        x_end = x_start + resized_character.shape[1]
+
+        canvas[:, x_start:x_end] = resized_character
+        normalized_characters.append(canvas)
+
+    for index, normalized in enumerate(normalized_characters):
+        print(f"Character {index}: {normalized.shape}")
+
+    preview = np.full(
+        (100, 60 * len(normalized_characters)),
+        255,
+        dtype = np.uint8
+    )
+
+    for i, normalized_character in enumerate(normalized_characters):
+        x_start = 60 * i
+        x_end = x_start + 60
+
+        preview[:, x_start:x_end] = normalized_character
     # --------------------------------------------------
     # Draw accepted contours
     # --------------------------------------------------
@@ -190,7 +345,23 @@ else:
             (x + box_width, y + box_height),
             (0, 255, 0),
             2
-    )
+        )
+
+    # --------------------------------------------------
+    # Draw unique box view
+    # --------------------------------------------------
+    unique_box_view = plate_crop.copy()
+    
+    for x, y, box_width, box_height in unique_boxes:
+        cv2.rectangle(
+            unique_box_view,
+            (x, y),
+            (x + box_width, y + box_height),
+            (0, 255, 0),
+            2
+        )
+
+
 
     # --------------------------------------------------
     # Display results
@@ -199,8 +370,10 @@ else:
     # cv2.imshow("Original Plate Crop", plate_crop)
     # cv2.imshow("Canny Edges", edges)
     # cv2.imshow("Closed Edges", closed_edges)
-    cv2.imshow("Detected Character Contours", contour_view)
-    cv2.imshow("Character Boxes", box_view)
+    # cv2.imshow("Detected Character Contours", contour_view)
+    # cv2.imshow("Character Boxes", box_view)
+    cv2.imshow("Unique Character Boxes", unique_box_view)
+    cv2.imshow("Character Preview", preview)
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
