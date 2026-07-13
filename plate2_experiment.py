@@ -73,7 +73,7 @@ def predict_character(target_character, templates):
 # Configuration
 # --------------------------------------------------
 
-IMAGE_PATH = "plate.jpg"
+IMAGE_PATH = "plate2.jpg"
 
 # Crop coordinates in the original image.
 CROP_Y_START = 275
@@ -100,12 +100,33 @@ NORMALIZED_WIDTH = 60
 # Load the original image
 # --------------------------------------------------
 
-image = cv2.imread(IMAGE_PATH)
+image = cv2.imread(IMAGE_PATH)  
 
 if image is None:
     print(f"Could not read image: {IMAGE_PATH}")
 
 else:
+    print(image.shape)
+    display_scale = 0.4
+    display_image = cv2.resize(
+        image,
+        None,
+        fx=display_scale,
+        fy=display_scale
+    )
+    x_small, y_small, width_small, height_small = cv2.selectROI(
+        "Select License Plate",
+        display_image,
+        showCrosshair=True,
+        fromCenter=False
+    )
+    cv2.destroyWindow("Select License Plate")
+
+    x = round(x_small / display_scale)
+    y = round(y_small / display_scale)
+    width = round(width_small / display_scale)
+    height = round(height_small / display_scale)
+
     image_height, image_width, image_channels = image.shape
 
     print("Original image:")
@@ -120,8 +141,8 @@ else:
     # NumPy/OpenCV slicing uses:
     # image[y_start:y_end, x_start:x_end]
     plate_crop = image[
-        CROP_Y_START:CROP_Y_END,
-        CROP_X_START:CROP_X_END
+        y:y+height,
+        x:x+width
     ]
 
     print("\nCropped plate shape:", plate_crop.shape)
